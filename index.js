@@ -540,7 +540,7 @@ app.use((err, req, res, next) => {
   res.status(500).send({ message: err.message || "Server error" });
 });
 
-const port = process.env.PORT || 5000;
-app.listen(port, () => {
-  console.log(`✅ Local server running on http://localhost:${port}`);
-});
+// const port = process.env.PORT || 5000;
+// app.listen(port, () => {
+//   console.log(`✅ Local server running on http://localhost:${port}`);
+// });
