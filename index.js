@@ -12,7 +12,7 @@ app.use(express.json());
 
 // ---------------- CORS ----------------
 const allowedOrigins = [
-  
+  "http://localhost:5173",
   process.env.CLIENT_URL,
   "https://blood-drop-b7711.web.app",
 ].filter(Boolean);
