@@ -5,8 +5,6 @@ const admin = require("firebase-admin");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 
-
-
 const app = express();
 app.use(express.json());
 
@@ -17,22 +15,22 @@ const allowedOrigins = [
   "https://blood-drop-b7711.web.app",
 ].filter(Boolean);
 
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-      return cb(new Error("Not allowed by CORS: " + origin));
-    },
-    credentials: true,
-  })
-);
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // Postman / server-to-server
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error("Not allowed by CORS: " + origin));
+  },
+  credentials: true,
+};
 
-app.options(/.*/, cors());
+app.use(cors(corsOptions));
+
+// ✅ FIX: Express/router in Node 22 crashes on "*" here.
+// Use regex to match all routes.
+app.options(/.*/, cors(corsOptions));
 
 // ---------------- Firebase Admin ----------------
-// Put FIREBASE_SERVICE_ACCOUNT as JSON string in env for production.
-// Local: you can skip it (then /jwt token flow will not work, email fallback still works)
 if (!admin.apps.length && process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -46,8 +44,16 @@ if (!admin.apps.length && process.env.FIREBASE_SERVICE_ACCOUNT) {
 }
 
 // ---------------- Mongo ----------------
+if (!process.env.DB_URI) {
+  console.error("❌ DB_URI missing in environment variables");
+}
+
 const client = new MongoClient(process.env.DB_URI, {
-  serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
 });
 
 // ---------------- Helpers ----------------
@@ -67,12 +73,13 @@ const verifyJWT = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err) return res.status(401).send({ message: "Unauthorized (invalid token)" });
-    req.decoded = decoded; // { email, uid? }
+    req.decoded = decoded;
     next();
   });
 };
 
 async function run() {
+  // ✅ Connect Mongo FIRST (Render-safe)
   await client.connect();
   console.log("✅ Mongo connected");
 
@@ -141,9 +148,6 @@ async function run() {
   });
 
   // ---------------- JWT exchange ----------------
-  // Accepts:
-  // 1) { token: firebaseIdToken } (production)
-  // 2) { email } (local fallback)
   app.post("/jwt", async (req, res) => {
     try {
       const { token, email } = req.body || {};
@@ -160,7 +164,6 @@ async function run() {
         const userEmail = normalizeEmail(decoded.email);
         if (!userEmail) return res.status(401).send({ message: "Unauthorized (no email)" });
 
-        // ✅ upsert so jwt works even before /users is called
         await usersCollection.updateOne(
           { email: userEmail },
           {
@@ -183,7 +186,6 @@ async function run() {
       const safeEmail = normalizeEmail(email);
       if (!safeEmail) return res.status(400).send({ message: "Token or email required" });
 
-      // ✅ upsert for fallback too
       await usersCollection.updateOne(
         { email: safeEmail },
         {
@@ -307,8 +309,6 @@ async function run() {
   });
 
   // ---------------- DONATION REQUESTS ----------------
-
-  // ✅ PUBLIC LIST (FIXED): supports ?status=pending&page=1&limit=12
   app.get("/donation-requests", async (req, res) => {
     try {
       const { status = "pending", page = 1, limit = 12 } = req.query;
@@ -415,7 +415,9 @@ async function run() {
     const col = await getRequestsCollection();
     const existing = await col.findOne({ _id: new ObjectId(req.params.id) });
     if (!existing) return res.status(404).send({ message: "Not found" });
-    if (existing.status !== "pending") return res.status(400).send({ message: "Only pending can be donated" });
+    if (existing.status !== "pending") {
+      return res.status(400).send({ message: "Only pending can be donated" });
+    }
 
     await col.updateOne(
       { _id: existing._id },
@@ -533,16 +535,16 @@ async function run() {
       totalFunding: fundAgg?.[0]?.totalFunding || 0,
     });
   });
+
+  // ✅ Start server after DB is ready
+  const port = process.env.PORT || 5000;
+  app.listen(port, () => console.log(`✅ Server running on port ${port}`));
 }
 
 run().catch((e) => console.error("❌ run() error:", e.message));
 
+// Global error handler
 app.use((err, req, res, next) => {
   console.error("❌ Server error:", err.message);
   res.status(500).send({ message: err.message || "Server error" });
-});
-
-const port = process.env.PORT || 5000;
-app.listen(port, () => {
-  console.log(`✅ Local server running on http://localhost:${port}`);
 });
