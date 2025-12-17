@@ -4,6 +4,10 @@ const jwt = require("jsonwebtoken");
 const admin = require("firebase-admin");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
+require("mongodb");
+require("dotenv").config();
+require("mongodb");
+require("dotenv").config();
 
 const app = express();
 app.use(express.json());
